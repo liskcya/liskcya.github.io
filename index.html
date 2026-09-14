@@ -5,6 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>赵晨宇 · 数字媒体技术 | 个人主页</title>
   <meta name="description" content="赵晨宇的个人主页 —— 2026 级数字媒体技术准大一新生，热爱技术与创意。" />
+  <link rel="dns-prefetch" href="//s4.anilist.co" />
+  <link rel="dns-prefetch" href="//img1.doubanio.com" />
+  <link rel="dns-prefetch" href="//cdn.cloudflare.steamstatic.com" />
+  <link rel="dns-prefetch" href="//image.tmdb.org" />
+  <link rel="dns-prefetch" href="//images.launchbox-app.com" />
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23050508'/%3E%3Ctext x='32' y='42' font-family='monospace' font-size='26' font-weight='bold' fill='%23a06eff' text-anchor='middle'%3EZCY%3C/text%3E%3C/svg%3E" />
   <style>
 /* ==========================================================
@@ -4612,12 +4617,83 @@ var WP_IMG = {
       item.addEventListener('click', function () {
         mode = w.id;
         try { localStorage.setItem('zcy-wallpaper', mode); } catch (e) {}
+        if (VIDEO_FILE[w.id]) { _pfDone[VIDEO_FILE[w.id]] = true; _pfAbort(); }
         renderList();
         applyScene(true);
       });
+      if (VIDEO_FILE[w.id]) {
+        item.addEventListener('mouseenter', function () {
+          if (_pfTier() > 0) { _pfBudget = Math.max(_pfBudget, 1); _pfEnqueue(VIDEO_FILE[w.id], true); }
+        });
+      }
       wpList.appendChild(item);
     });
   }
+  /* ---------- 视频壁纸预取：切壁纸尽量秒切 ---------- */
+  var VIDEO_FILE = {
+    sakura: 'summer-studio', snow: 'snow', ocean: 'ocean', fireworks: 'fireworks',
+    synthwave: 'synthwave', seaside: 'seaside', cyberpunk: 'cyberpunk', starry: 'starry',
+    snowy: 'irithyll', blossom: 'blossom', countryside: 'countryside', sunset: 'sunset',
+    tokyorain: 'tokyorain', 'cyberpunk-city': 'cyberpunk-city', 'snow-maple': 'snow-maple',
+    'star-gate': 'star-gate', 'desk-ui': 'desk-ui'
+  };
+  var _pfDone = {}, _pfQueue = [], _pfEl = null, _pfBudget = 0, _pfTimer = 0;
+  var _conn = navigator.connection || null;
+  function _pfTier() {
+    if (!_conn) return 1;
+    if (_conn.saveData) return 0;
+    var et = _conn.effectiveType || '4g';
+    if (et === 'slow-2g' || et === '2g') return 0;
+    if (et === '3g') return 1;
+    return 2;
+  }
+  function _pfEnqueue(file, front) {
+    if (!file || _pfDone[file]) return;
+    _pfDone[file] = true;
+    if (front) _pfQueue.unshift(file); else _pfQueue.push(file);
+    _pfTick();
+  }
+  function _pfTick() {
+    if (_pfEl || document.hidden || _pfQueue.length === 0) return;
+    if (_pfBudget <= 0) { _pfQueue.length = 0; return; }
+    var file = _pfQueue.shift();
+    _pfBudget--;
+    var v = document.createElement('video');
+    v.setAttribute('data-pf', '1');
+    v.muted = true;
+    v.preload = 'auto';
+    v.style.cssText = 'position:fixed;width:1px;height:1px;opacity:0;pointer-events:none;z-index:-99;';
+    var fin = function () {
+      _pfEl = null;
+      try { v.pause(); v.removeAttribute('src'); v.load(); v.remove(); } catch (e) {}
+      setTimeout(_pfTick, 150);
+    };
+    v.addEventListener('canplaythrough', fin);
+    v.addEventListener('error', fin);
+    _pfTimer = setTimeout(fin, 45000);
+    document.body.appendChild(v);
+    _pfEl = v;
+    v.src = 'wallpapers/' + file + '.mp4';
+  }
+  function _pfAbort() {
+    clearTimeout(_pfTimer);
+    _pfQueue.length = 0;
+    if (_pfEl) {
+      try { _pfEl.pause(); _pfEl.removeAttribute('src'); _pfEl.load(); _pfEl.remove(); } catch (e) {}
+      _pfEl = null;
+    }
+  }
+  document.addEventListener('visibilitychange', function () { if (!document.hidden) setTimeout(_pfTick, 300); });
+  // 好网络下，页面空闲后悄悄预取前 4 个视频壁纸
+  window.addEventListener('load', function () {
+    setTimeout(function () {
+      if (_pfTier() < 2) return;
+      _pfBudget = Math.max(_pfBudget, 4);
+      var ids = WALLPAPERS.map(function (w) { return VIDEO_FILE[w.id]; }).filter(Boolean).slice(0, 4);
+      ids.forEach(function (f) { _pfEnqueue(f, false); });
+    }, 6000);
+  });
+
   renderList();
   wpFab.addEventListener('click', function (e) {
     e.stopPropagation();
@@ -4625,6 +4701,13 @@ var WP_IMG = {
     if (dock.classList.contains('open')) {
       var td = document.getElementById('themeDock');
       if (td) td.classList.remove('open');
+      // 打开面板：按网络档位预取若干视频，点开即播
+      var tier = _pfTier();
+      if (tier > 0) {
+        _pfBudget = Math.max(_pfBudget, tier === 2 ? 8 : 2);
+        var seq = WALLPAPERS.map(function (w) { return VIDEO_FILE[w.id]; }).filter(Boolean);
+        seq.slice(0, tier === 2 ? 10 : 3).forEach(function (f) { _pfEnqueue(f, false); });
+      }
     }
   });
   document.addEventListener('click', function (e) {
@@ -4743,17 +4826,31 @@ var WP_IMG = {
         if (p && p.catch) p.catch(function () {});
       }
     }
+    var toast = null;
+    function hideToast() {
+      if (!toast) return;
+      var t = toast; toast = null;
+      t.style.opacity = '0';
+      setTimeout(function () { try { t.remove(); } catch (e) {} }, 400);
+    }
     function init(w, h) {
+      try { if (typeof _pfAbort === 'function') _pfAbort(); } catch (e) {}
       video = document.createElement('video');
       video.src = src;
+      video.preload = 'auto';
       video.autoplay = true;
       video.loop = true;
       video.muted = true;
       video.playsInline = true;
       video.style.cssText = 'position:fixed;inset:0;width:100%;height:100%;object-fit:cover;z-index:-4;pointer-events:none;opacity:0;transition:opacity 0.4s ease;';
       document.body.appendChild(video);
+      toast = document.createElement('div');
+      toast.textContent = '壁纸加载中…';
+      toast.style.cssText = 'position:fixed;left:50%;bottom:88px;transform:translateX(-50%);z-index:60;background:rgba(10,10,18,.72);color:#e8e6f5;font:13px/1.4 system-ui,sans-serif;padding:8px 16px;border-radius:999px;border:1px solid rgba(160,110,255,.35);backdrop-filter:blur(6px);transition:opacity .4s ease;pointer-events:none;letter-spacing:.5px;';
+      document.body.appendChild(toast);
       video.addEventListener('canplay', function () {
         if (!video) return;
+        hideToast();
         var p = video.play();
         if (p && p.catch) p.catch(function () {});
       });
@@ -4766,6 +4863,7 @@ var WP_IMG = {
     function frame(c, w, h, t, dt) { /* video 自播放，canvas 留空 */ }
     function destroy() {
       document.removeEventListener('visibilitychange', onVis);
+      hideToast();
       if (video) {
         var v = video;
         video = null;
