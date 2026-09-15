@@ -994,6 +994,41 @@ body.wp-on .section-alt { background: transparent !important; }
 .bgm-prog { position: absolute; bottom: 0; left: 14px; right: 14px; height: 2px; background: rgba(255,255,255,0.06); border-radius: 1px; overflow: hidden; }
 .bgm-prog-bar { height: 100%; width: 0; background: linear-gradient(90deg, var(--acc), var(--acc-2)); transition: width .3s linear; }
 @media (max-width: 600px) { .bgm-player { max-width: calc(100vw - 32px); } }
+.bgm-list-btn {
+  background: none; border: none; cursor: pointer; padding: 2px;
+  color: var(--text-dim); font-size: 13px; line-height: 1;
+  width: 26px; height: 26px; border-radius: 50%; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  transition: color .2s, background .2s;
+}
+.bgm-list-btn:hover { color: var(--acc); background: rgba(var(--acc-rgb),0.12); }
+.bgm-playlist {
+  position: fixed; bottom: 64px; right: 16px; z-index: 1000;
+  width: 300px; max-height: 380px; overflow-y: auto;
+  background: rgba(18,18,26,0.95); backdrop-filter: blur(14px);
+  border: 1px solid rgba(255,255,255,0.1); border-radius: 14px;
+  padding: 8px 4px 8px 0; display: none;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+  font-family: var(--mono); font-size: 12px;
+}
+.bgm-playlist.show { display: block; }
+.bgm-playlist-head {
+  padding: 6px 14px 10px; font-size: 11px; color: var(--text-faint);
+  letter-spacing: 1px; text-transform: uppercase; border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+.bgm-pl-item {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  padding: 7px 14px; cursor: pointer; transition: background .15s;
+  border: none; background: none; text-align: left;
+  color: var(--text-dim); font-family: var(--mono); font-size: 12px;
+}
+.bgm-pl-item:hover { background: rgba(255,255,255,0.05); color: var(--text-bright); }
+.bgm-pl-item.active { color: var(--acc); }
+.bgm-pl-item.active .bgm-pl-idx { color: var(--acc); }
+.bgm-pl-idx { width: 18px; text-align: right; color: var(--text-faint); font-size: 10px; flex-shrink: 0; }
+.bgm-pl-title { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bgm-pl-artist { font-size: 10px; color: var(--text-faint); flex-shrink: 0; }
+@media (max-width: 600px) { .bgm-playlist { width: calc(100vw - 32px); right: 16px; } }
 
   </style>
   <script>
@@ -1402,9 +1437,9 @@ const WORLDS = [
       '小说': '《三体》《仿生人会梦见电子羊吗？》'
     },
     music: {
-      src: 'assets/audio/c4b05247a8e5fcdd.mp3',
-      title: 'Floating Cities — Kevin MacLeod',
-      note: '缓慢漂浮的氛围合成器与柔和铺底，像隔着舷窗看星云和城市般的光团静静旋转'
+      src: 'assets/audio/wp-star-gate.mp3',
+      title: 'Star Gate — Wallpaper Engine',
+      note: '星空之门视频原声，空旷深邃的宇宙氛围，像隔着舷窗看星云静静旋转'
     }
   },
   {
@@ -1428,9 +1463,9 @@ const WORLDS = [
       '音乐': 'Lo-fi Hip Hop · City Pop · 深夜电台'
     },
     music: {
-      src: 'assets/audio/83db895b37dff434.mp3',
-      title: 'Dreamy Flashback — Kevin MacLeod',
-      note: '梦幻缓慢的 Lo-fi Chill 小品，像雨夜窗玻璃上滑下的水珠，和远处揉成一团的暖灯光'
+      src: 'assets/audio/wp-tokyorain.mp3',
+      title: '2:00 AM — Wallpaper Engine',
+      note: '凌晨两点东京雨夜视频原声，雨声与Lo-fi节拍交织的深夜电台松弛感'
     }
   }
 ];
@@ -3746,7 +3781,7 @@ document.addEventListener('DOMContentLoaded', () => {
      ========================================================== */
   document.addEventListener('DOMContentLoaded', function() {
     const BGM = [
-      { artist:'Alan Walker',       title:'The Spectre',           tag:'EDM',         src:'assets/audio/5b23ffe11cac349d.mp3' },
+      { artist:'C418',              title:'Living Mice',           tag:'Game OST',    src:'assets/audio/fc0e1471bb11ceeb.mp3' },
       { artist:'Adele',             title:'Someone Like You',       tag:'Pop',         src:'assets/audio/f1fd9b60843a8f8b.mp3' },
       { artist:'keshi',             title:'2 soon',                tag:'Lo-fi',       src:'assets/audio/b865b929bdf55e5c.mp3' },
       { artist:'Marconi Union',     title:'Weightless',            tag:'Ambient',     src:'assets/audio/26e53239e01c5483.mp3' },
@@ -3755,7 +3790,7 @@ document.addEventListener('DOMContentLoaded', () => {
       { artist:'Linkin Park',       title:'One More Light',        tag:'Rock',        src:'assets/audio/5c464ae96e692381.mp3' },
       { artist:'Anson Seabra',      title:'Keep Your Head Up Princess', tag:'Acoustic', src:'assets/audio/efec18849d11d452.mp3' },
       { artist:'Charlie Puth',      title:'Attention',             tag:'Pop',         src:'assets/audio/deee329749a6494c.mp3' },
-      { artist:'C418',              title:'Living Mice',           tag:'Game OST',    src:'assets/audio/fc0e1471bb11ceeb.mp3' },
+      { artist:'Alan Walker',       title:'The Spectre',           tag:'EDM',         src:'assets/audio/5b23ffe11cac349d.mp3' },
       { artist:'majiko',            title:'アイロニ',              tag:'J-Pop',       src:'assets/audio/7ff085a409b9c81f.mp3' },
       { artist:'HOPE-T',            title:'锦里',                  tag:'CN Electronic', src:'assets/audio/62776469f44a8041.mp3' },
       { artist:'Dennis Kuo', title:'Track in Time', tag:'Piano', src:'assets/audio/e83a965175aaa245.mp3' },
@@ -3786,8 +3821,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     function pause() { audio.pause(); playing = false; playBtn.textContent = '▶'; }
     function toggle() { playing ? pause() : play(); }
-    function next() { load(cur + 1); if (playing) play(); }
-    function prev() { load(cur - 1); if (playing) play(); }
+    function next() { load(cur + 1); if (playing) play(); if (playlist.classList.contains('show')) renderPlaylist(); }
+    function prev() { load(cur - 1); if (playing) play(); if (playlist.classList.contains('show')) renderPlaylist(); }
 
     audio.addEventListener('ended', next);
     audio.addEventListener('timeupdate', () => {
@@ -3798,11 +3833,46 @@ document.addEventListener('DOMContentLoaded', () => {
     nextBtn.addEventListener('click', e => { e.stopPropagation(); next(); });
     prevBtn.addEventListener('click', e => { e.stopPropagation(); prev(); });
 
+    // 歌单面板
+    const listBtn = el('bgmListBtn');
+    const playlist = el('bgmPlaylist');
+    const plItems = el('bgmPlItems');
+
+    function renderPlaylist() {
+      plItems.innerHTML = '';
+      BGM.forEach(function(t, i) {
+        var item = document.createElement('button');
+        item.className = 'bgm-pl-item' + (i === cur ? ' active' : '');
+        item.innerHTML =
+          '<span class="bgm-pl-idx">' + (i + 1) + '</span>' +
+          '<span class="bgm-pl-title">' + t.title + '</span>' +
+          '<span class="bgm-pl-artist">' + t.artist + '</span>';
+        item.addEventListener('click', function(e) {
+          e.stopPropagation();
+          load(i);
+          play();
+          renderPlaylist();
+        });
+        plItems.appendChild(item);
+      });
+    }
+    listBtn.addEventListener('click', function(e) {
+      e.stopPropagation();
+      playlist.classList.toggle('show');
+      if (playlist.classList.contains('show')) renderPlaylist();
+    });
+    document.addEventListener('click', function(e) {
+      if (!playlist.contains(e.target) && e.target !== listBtn && !listBtn.contains(e.target)) {
+        playlist.classList.remove('show');
+      }
+    });
+    playlist.addEventListener('click', function(e) { e.stopPropagation(); });
+
     // 常驻显示，由用户手动点击播放
     load(0);
     player.classList.add('show');
 
-    window._bgm = { BGM, load, play, pause, next, prev, toggle, audio, get cur() { return cur; }, get playing() { return playing; } };
+    window._bgm = { BGM, load, play, pause, next, prev, toggle, audio, renderPlaylist, get cur() { return cur; }, get playing() { return playing; } };
   });
 
   </script>
@@ -3816,7 +3886,12 @@ document.addEventListener('DOMContentLoaded', () => {
       <div class="bgm-title" id="bgmTitle">—</div>
     </div>
     <div class="bgm-tag" id="bgmTag">—</div>
+    <button class="bgm-list-btn" id="bgmListBtn" title="歌单">☰</button>
     <div class="bgm-prog"><div class="bgm-prog-bar" id="bgmProgBar"></div></div>
+  </div>
+  <div class="bgm-playlist" id="bgmPlaylist">
+    <div class="bgm-playlist-head">Playlist · 19 首</div>
+    <div id="bgmPlItems"></div>
   </div>
 
   <!-- ===== 主题切换（壁纸软件风格） ===== -->
