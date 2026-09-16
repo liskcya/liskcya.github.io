@@ -4717,7 +4717,7 @@ var WP_IMG = {
   function _vdbOpen(cb) {
     if (_vdb !== null) { cb(_vdb || false); return; }
     try {
-      var req = indexedDB.open('zcy-vid-cache', 1);
+      var req = indexedDB.open('zcy-vid-cache', 2);
       req.onupgradeneeded = function () {
         var db = req.result;
         if (!db.objectStoreNames.contains('poster')) db.createObjectStore('poster', { keyPath: 'name' });
