@@ -4664,13 +4664,17 @@ var WP_IMG = {
     '.wp-sub{font-size:10.5px;color:var(--text-faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-family:var(--mono)}' +
     '.wp-check{color:var(--acc);font-size:13px;opacity:0;flex:none}' +
     '.wp-item.active .wp-check{opacity:1}' +
-    '@media (max-width:640px){.wp-dock{left:12px;bottom:70px}.wp-panel{width:calc(100vw - 86px)}}';
+    '@media (max-width:640px){.wp-dock{left:12px;bottom:70px}.wp-panel{width:calc(100vw - 86px)}}' +
+    '.wp-prefetch{margin-top:10px;width:100%;padding:8px 10px;border-radius:11px;border:1px dashed rgba(var(--acc-rgb),0.4);background:rgba(var(--acc-rgb),0.06);color:var(--text);font:600 12px/1.3 var(--sans);cursor:pointer;transition:background .2s,border-color .2s}' +
+    '.wp-prefetch:hover{background:rgba(var(--acc-rgb),0.13)}' +
+    '.wp-prefetch.busy{cursor:default;border-style:solid;opacity:.92}' +
+    '.wp-prefetch.done{border-style:solid;border-color:rgba(120,220,150,.45);background:rgba(90,200,130,.1)}';
   document.head.appendChild(dockStyle);
 
   var dock = document.createElement('div');
   dock.className = 'wp-dock';
   dock.innerHTML = '<button class="wp-fab" id="wpFab" title="动态壁纸" aria-label="动态壁纸">🖼️</button>' +
-    '<div class="wp-panel"><div class="wp-panel-title">动态壁纸 · Wallpaper</div><div class="wp-list" id="wpList"></div></div>';
+    '<div class="wp-panel"><div class="wp-panel-title">动态壁纸 · Wallpaper</div><div class="wp-list" id="wpList"></div><button class="wp-prefetch" id="wpPreAll" type="button">⬇ 预加载全部动态壁纸（约 157MB）</button></div>';
   document.body.appendChild(dock);
   var wpFab = dock.querySelector('#wpFab');
   var wpList = dock.querySelector('#wpList');
@@ -4691,19 +4695,14 @@ var WP_IMG = {
       item.addEventListener('click', function () {
         mode = w.id;
         try { localStorage.setItem('zcy-wallpaper', mode); } catch (e) {}
-        if (VIDEO_FILE[w.id]) { _pfDone[VIDEO_FILE[w.id]] = true; _pfAbort(); }
+        if (VIDEO_FILE[w.id]) { try { _pvYield(); } catch (e) {} }
         renderList();
         applyScene(true);
       });
-      if (VIDEO_FILE[w.id]) {
-        item.addEventListener('mouseenter', function () {
-          if (_pfTier() > 0) { _pfBudget = Math.max(_pfBudget, 1); _pfEnqueue(VIDEO_FILE[w.id], true); }
-        });
-      }
       wpList.appendChild(item);
     });
   }
-  /* ---------- 视频壁纸预取：切壁纸尽量秒切 ---------- */
+  /* ---------- 视频/封面：IndexedDB 永久缓存 + jsDelivr CDN（看过一次即永久秒开） ---------- */
   var VIDEO_FILE = {
     sakura: 'summer-studio', snow: 'snow', ocean: 'ocean', fireworks: 'fireworks',
     synthwave: 'synthwave', seaside: 'seaside', cyberpunk: 'cyberpunk', starry: 'starry',
@@ -4711,62 +4710,196 @@ var WP_IMG = {
     tokyorain: 'tokyorain', 'cyberpunk-city': 'cyberpunk-city', 'snow-maple': 'snow-maple',
     'star-gate': 'star-gate', 'desk-ui': 'desk-ui'
   };
-  var _pfDone = {}, _pfQueue = [], _pfEl = null, _pfBudget = 0, _pfTimer = 0;
-  var _conn = navigator.connection || null;
-  function _pfTier() {
-    if (!_conn) return 1;
-    if (_conn.saveData) return 0;
-    var et = _conn.effectiveType || '4g';
-    if (et === 'slow-2g' || et === '2g') return 0;
-    if (et === '3g') return 1;
-    return 2;
+  var VID_COMMIT = '3406ed0607765a9fcc4b00d667465de9543e9bc3';
+  var VID_CDN = 'https://cdn.jsdelivr.net/gh/liskcya/liskcya.github.io@' + VID_COMMIT + '/';
+
+  var _vdb = null;
+  function _vdbOpen(cb) {
+    if (_vdb !== null) { cb(_vdb || false); return; }
+    try {
+      var req = indexedDB.open('zcy-vid-cache', 1);
+      req.onupgradeneeded = function () {
+        var db = req.result;
+        if (!db.objectStoreNames.contains('poster')) db.createObjectStore('poster', { keyPath: 'name' });
+        if (!db.objectStoreNames.contains('video')) db.createObjectStore('video', { keyPath: 'name' });
+      };
+      req.onsuccess = function () { _vdb = req.result; cb(_vdb); };
+      req.onerror = function () { _vdb = false; cb(false); };
+    } catch (e) { _vdb = false; cb(false); }
   }
-  function _pfEnqueue(file, front) {
-    if (!file || _pfDone[file]) return;
-    _pfDone[file] = true;
-    if (front) _pfQueue.unshift(file); else _pfQueue.push(file);
-    _pfTick();
+  function _vdbRec(db, store, name, cb) {
+    if (!db) { cb(null); return; }
+    try {
+      var r = db.transaction(store, 'readonly').objectStore(store).get(name);
+      r.onsuccess = function () { cb(r.result || null); };
+      r.onerror = function () { cb(null); };
+    } catch (e) { cb(null); }
   }
-  function _pfTick() {
-    if (_pfEl || document.hidden || _pfQueue.length === 0) return;
-    if (_pfBudget <= 0) { _pfQueue.length = 0; return; }
-    var file = _pfQueue.shift();
-    _pfBudget--;
-    var v = document.createElement('video');
-    v.setAttribute('data-pf', '1');
-    v.muted = true;
-    v.preload = 'auto';
-    v.style.cssText = 'position:fixed;width:1px;height:1px;opacity:0;pointer-events:none;z-index:-99;';
-    var fin = function () {
-      _pfEl = null;
-      try { v.pause(); v.removeAttribute('src'); v.load(); v.remove(); } catch (e) {}
-      setTimeout(_pfTick, 150);
-    };
-    v.addEventListener('canplaythrough', fin);
-    v.addEventListener('error', fin);
-    _pfTimer = setTimeout(fin, 45000);
-    document.body.appendChild(v);
-    _pfEl = v;
-    v.src = 'wallpapers/' + file + '.mp4';
+  function _vdbPut(db, store, name, blob) {
+    if (!db || !blob) return;
+    try { db.transaction(store, 'readwrite').objectStore(store).put({ name: name, blob: blob }); } catch (e) {}
   }
-  function _pfAbort() {
-    clearTimeout(_pfTimer);
-    _pfQueue.length = 0;
-    if (_pfEl) {
-      try { _pfEl.pause(); _pfEl.removeAttribute('src'); _pfEl.load(); _pfEl.remove(); } catch (e) {}
-      _pfEl = null;
+  function _vdbKeys(db, store, cb) {
+    var out = [];
+    if (!db) { cb(out); return; }
+    try {
+      var rq = db.transaction(store, 'readonly').objectStore(store).openKeyCursor();
+      rq.onsuccess = function () {
+        var c = rq.result;
+        if (!c) { cb(out); return; }
+        out.push(String(c.key)); c.continue();
+      };
+      rq.onerror = function () { cb(out); };
+    } catch (e) { cb(out); }
+  }
+  function _vcCands(kind, file) {
+    if (kind === 'video') return [VID_CDN + 'wallpapers/' + file + '.mp4', 'wallpapers/' + file + '.mp4'];
+    return [VID_CDN + 'wallpapers/posters/' + file + '.jpg', 'wallpapers/posters/' + file + '.jpg'];
+  }
+  /* 取二进制：先查 IndexedDB，未命中按 CDN→本站 回退链下载，成功即存入本地库。cb(blob|null, fromCache) */
+  function vcGet(kind, file, cb) {
+    var dead = false, ac = null;
+    function net() {
+      var urls = _vcCands(kind, file), idx = 0;
+      (function next() {
+        if (dead) return;
+        if (idx >= urls.length) { cb(null, false); return; }
+        var u = urls[idx++];
+        try {
+          ac = new AbortController();
+          fetch(u, { signal: ac.signal, mode: 'cors' }).then(function (r) {
+            if (!r.ok) throw 0;
+            return r.blob();
+          }).then(function (b) {
+            if (dead) return;
+            _vdbPut(_vdb, kind, file, b);
+            cb(b, false);
+          }).catch(function () { ac = null; setTimeout(next, 0); });
+        } catch (e) { setTimeout(next, 0); }
+      })();
+    }
+    _vdbOpen(function (db) {
+      if (dead) return;
+      _vdbRec(db, kind, file, function (rec) {
+        if (dead) return;
+        if (rec && rec.blob) { cb(rec.blob, true); return; }
+        net();
+      });
+    });
+    return { abort: function () { dead = true; try { if (ac) ac.abort(); } catch (e) {} } };
+  }
+
+  /* 封面预取：16 张共约 3MB，进站后立即全部入库，切换壁纸时封面秒显 */
+  var _ppDone = {}, _ppQ = [], _ppN = 0;
+  function _ppTick() {
+    if (document.hidden) return;
+    while (_ppN < 4 && _ppQ.length) {
+      var f = _ppQ.shift();
+      _ppN++;
+      vcGet('poster', f, function () { _ppN--; setTimeout(_ppTick, 30); });
     }
   }
-  document.addEventListener('visibilitychange', function () { if (!document.hidden) setTimeout(_pfTick, 300); });
-  // 好网络下，页面空闲后悄悄预取前 4 个视频壁纸
-  window.addEventListener('load', function () {
-    setTimeout(function () {
-      if (_pfTier() < 2) return;
-      _pfBudget = Math.max(_pfBudget, 4);
-      var ids = WALLPAPERS.map(function (w) { return VIDEO_FILE[w.id]; }).filter(Boolean).slice(0, 4);
-      ids.forEach(function (f) { _pfEnqueue(f, false); });
-    }, 6000);
+  function _ppEnqueueAll() {
+    WALLPAPERS.forEach(function (w) {
+      var f = VIDEO_FILE[w.id];
+      if (f && !_ppDone[f]) { _ppDone[f] = 1; _ppQ.push(f); }
+    });
+    _ppTick();
+  }
+
+  /* ---- 全部视频手动预加载（约166MB，小文件优先，2 并发；切壁纸时自动让路） ---- */
+  var preBtn = dock.querySelector('#wpPreAll');
+  var VID_ORDER = ['cyberpunk', 'sunset', 'snow-maple', 'star-gate', 'fireworks', 'ocean', 'cyberpunk-city', 'desk-ui', 'summer-studio', 'tokyorain', 'seaside', 'blossom', 'irithyll', 'synthwave', 'countryside', 'starry'];
+  var VID_SIZE = { cyberpunk: 2.1, sunset: 2.3, 'snow-maple': 2.4, 'star-gate': 3.0, fireworks: 3.1, ocean: 4.6, 'cyberpunk-city': 5.4, 'desk-ui': 5.4, 'summer-studio': 7.7, tokyorain: 7.8, seaside: 8.2, blossom: 13.4, irithyll: 14, synthwave: 14.6, countryside: 24, starry: 38.9 };
+  var _pvOn = false, _pvPaused = false, _pvQ = [], _pvBusy = [], _pvCtrls = {}, _pvRetry = {}, _pvDoneN = 0, _pvMB = 0, _pvArmed = false, _pvArmTimer = 0;
+  function _pvLabelIdle(have) {
+    var n = 0, mb = 0;
+    VID_ORDER.forEach(function (f) { if (have.indexOf(f) < 0) { n++; mb += (VID_SIZE[f] || 0); } });
+    if (n === 0) return '✓ 16 个动态壁纸已全部缓存';
+    if (have.length === 0) return '⬇ 预加载全部动态壁纸（约 157MB）';
+    return '⬇ 继续预加载剩余 ' + n + ' 个（约 ' + Math.round(mb) + 'MB）';
+  }
+  function _pvRefresh() {
+    if (_pvOn) return;
+    _vdbOpen(function (db) {
+      _vdbKeys(db, 'video', function (have) {
+        preBtn.classList.toggle('done', have.length >= 16);
+        preBtn.textContent = _pvLabelIdle(have);
+      });
+    });
+  }
+  function _pvUpdate() {
+    if (_pvOn) preBtn.textContent = '正在缓存 ' + _pvDoneN + '/16 · ' + Math.round(_pvMB) + 'MB（可后台进行）';
+  }
+  function _pvFinish() {
+    _pvOn = false; _pvPaused = false;
+    preBtn.classList.remove('busy');
+    if (_pvDoneN >= 16) { preBtn.classList.add('done'); preBtn.textContent = '✓ 16 个动态壁纸已全部缓存'; }
+    else { _pvRefresh(); }
+  }
+  function _pvAbortInflight(requeue) {
+    Object.keys(_pvCtrls).forEach(function (f) { try { _pvCtrls[f].abort(); } catch (e) {} });
+    _pvCtrls = {};
+    if (requeue) { _pvBusy.forEach(function (f) { if (_pvQ.indexOf(f) < 0) _pvQ.unshift(f); }); }
+    _pvBusy = [];
+  }
+  function _pvYield() { if (!_pvOn) return; _pvPaused = true; _pvAbortInflight(true); }
+  function _pvResume() { if (!_pvOn || !_pvPaused) return; _pvPaused = false; setTimeout(_pvTick, 200); }
+  function _pvTick() {
+    if (!_pvOn || _pvPaused || document.hidden) return;
+    while (_pvBusy.length < 2 && _pvQ.length) {
+      (function (file) {
+        _pvBusy.push(file);
+        _pvCtrls[file] = vcGet('video', file, function (blob) {
+          delete _pvCtrls[file];
+          var i = _pvBusy.indexOf(file); if (i >= 0) _pvBusy.splice(i, 1);
+          if (blob) { _pvDoneN++; _pvMB += (VID_SIZE[file] || 0); }
+          else if (!_pvRetry[file]) { _pvRetry[file] = 1; _pvQ.push(file); }
+          else { _pvDoneN++; }
+          _pvUpdate();
+          if (!_pvQ.length && !_pvBusy.length) _pvFinish();
+          else setTimeout(_pvTick, 250);
+        });
+      })(_pvQ.shift());
+    }
+  }
+  function _pvStart() {
+    if (_pvOn) return;
+    _pvOn = true; _pvDoneN = 0; _pvMB = 0;
+    preBtn.classList.add('busy'); preBtn.classList.remove('done');
+    _vdbOpen(function (db) {
+      _vdbKeys(db, 'video', function (have) {
+        have.forEach(function (f) { if (VID_ORDER.indexOf(f) >= 0) { _pvDoneN++; _pvMB += (VID_SIZE[f] || 0); } });
+        VID_ORDER.forEach(function (f) { if (have.indexOf(f) < 0) _pvQ.push(f); });
+        _pvUpdate();
+        if (!_pvQ.length) { _pvFinish(); return; }
+        _pvTick();
+      });
+    });
+  }
+  preBtn.addEventListener('click', function () {
+    if (_pvOn) return;
+    if (!_pvArmed) { /* 166MB 二次确认，保护流量 */
+      _pvArmed = true;
+      preBtn.textContent = '再点一次确认 · 将使用约 157MB 流量';
+      clearTimeout(_pvArmTimer);
+      _pvArmTimer = setTimeout(function () { _pvArmed = false; _pvRefresh(); }, 4000);
+      return;
+    }
+    _pvArmed = false; clearTimeout(_pvArmTimer);
+    try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (e) {}
+    _pvStart();
   });
+  document.addEventListener('pointerdown', function _pdPersist() {
+    try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (e) {}
+    document.removeEventListener('pointerdown', _pdPersist);
+  });
+  document.addEventListener('visibilitychange', function () {
+    if (document.hidden) { if (_pvOn) _pvAbortInflight(true); }
+    else { _ppTick(); if (_pvOn && !_pvPaused) setTimeout(_pvTick, 200); }
+  });
+  // 进站后立即预取全部封面（约 3MB）
+  window.addEventListener('load', function () { setTimeout(_ppEnqueueAll, 200); });
 
   renderList();
   wpFab.addEventListener('click', function (e) {
@@ -4775,13 +4908,7 @@ var WP_IMG = {
     if (dock.classList.contains('open')) {
       var td = document.getElementById('themeDock');
       if (td) td.classList.remove('open');
-      // 打开面板：按网络档位预取若干视频，点开即播
-      var tier = _pfTier();
-      if (tier > 0) {
-        _pfBudget = Math.max(_pfBudget, tier === 2 ? 8 : 2);
-        var seq = WALLPAPERS.map(function (w) { return VIDEO_FILE[w.id]; }).filter(Boolean);
-        seq.slice(0, tier === 2 ? 10 : 3).forEach(function (f) { _pfEnqueue(f, false); });
-      }
+      _pvRefresh();
     }
   });
   document.addEventListener('click', function (e) {
@@ -4891,59 +5018,108 @@ var WP_IMG = {
   }
 
   /* ---------- 场景调度 ---------- */
-  /* ---------- 场景：视频动态壁纸 ---------- */
+  /* ---------- 场景：视频动态壁纸（封面秒显 → 视频；IndexedDB 永久缓存） ---------- */
   function VideoScene(src) {
-    var video = null;
+    var m = String(src).match(/wallpapers\/(.+)\.mp4/);
+    var file = m ? m[1] : String(src);
+    var video = null, poster = null, toast = null, tipTimer = 0;
+    var ctlP = null, ctlV = null, videoUrl = null, posterUrl = null;
+    var started = false, dead = false, usedFallback = false;
     function onVis() {
       if (!document.hidden && video && video.paused) {
         var p = video.play();
         if (p && p.catch) p.catch(function () {});
       }
     }
-    var toast = null;
     function hideToast() {
+      clearTimeout(tipTimer);
       if (!toast) return;
       var t = toast; toast = null;
       t.style.opacity = '0';
       setTimeout(function () { try { t.remove(); } catch (e) {} }, 400);
     }
+    function reveal() {
+      if (started || !video || dead) return;
+      started = true;
+      hideToast();
+      var p = video.play();
+      if (p && p.catch) p.catch(function () {});
+      video.style.opacity = '1';
+      if (poster) poster.style.opacity = '0';
+      try { if (typeof _pvResume === 'function') _pvResume(); } catch (e) {}
+    }
+    function directChain() { /* fetch/blob 不可用时的最终兜底：video 元素直连回退链（不进本地库） */
+      if (usedFallback) return;
+      usedFallback = true;
+      var urls = _vcCands('video', file), k = 0;
+      video.onerror = function () {
+        k++;
+        if (k < urls.length) { video.src = urls[k]; var q = video.play(); if (q && q.catch) q.catch(function () {}); }
+        else { hideToast(); if (poster) poster.style.opacity = '1'; try { _pvResume(); } catch (e) {} }
+      };
+      video.src = urls[0];
+      var p = video.play(); if (p && p.catch) p.catch(function () {});
+    }
     function init(w, h) {
-      try { if (typeof _pfAbort === 'function') _pfAbort(); } catch (e) {}
+      try { if (typeof _pvYield === 'function') _pvYield(); } catch (e) {}
+      /* 封面层：立即显示，视频就绪后淡出 */
+      poster = document.createElement('div');
+      poster.style.cssText = 'position:fixed;inset:0;z-index:-5;background:#0a0a14 center/cover no-repeat;pointer-events:none;';
+      document.body.appendChild(poster);
+      ctlP = vcGet('poster', file, function (blob) {
+        if (dead) return;
+        if (blob) { posterUrl = URL.createObjectURL(blob); poster.style.backgroundImage = 'url(' + posterUrl + ')'; }
+        else { poster.style.backgroundImage = "url('wallpapers/posters/" + file + ".jpg')"; }
+      });
       video = document.createElement('video');
-      video.src = src;
-      video.preload = 'auto';
-      video.autoplay = true;
-      video.loop = true;
       video.muted = true;
+      video.loop = true;
       video.playsInline = true;
+      video.autoplay = true;
+      video.preload = 'auto';
       video.style.cssText = 'position:fixed;inset:0;width:100%;height:100%;object-fit:cover;z-index:-4;pointer-events:none;opacity:0;transition:opacity 0.4s ease;';
+      video.addEventListener('canplay', reveal);
+      video.onerror = function () { if (!usedFallback) directChain(); };
       document.body.appendChild(video);
-      toast = document.createElement('div');
-      toast.textContent = '壁纸加载中…';
-      toast.style.cssText = 'position:fixed;left:50%;bottom:88px;transform:translateX(-50%);z-index:60;background:rgba(10,10,18,.72);color:#e8e6f5;font:13px/1.4 system-ui,sans-serif;padding:8px 16px;border-radius:999px;border:1px solid rgba(160,110,255,.35);backdrop-filter:blur(6px);transition:opacity .4s ease;pointer-events:none;letter-spacing:.5px;';
-      document.body.appendChild(toast);
-      video.addEventListener('canplay', function () {
-        if (!video) return;
-        hideToast();
-        var p = video.play();
-        if (p && p.catch) p.catch(function () {});
+      /* 加载提示：本地缓存命中时不闪现 */
+      tipTimer = setTimeout(function () {
+        if (started || dead) return;
+        toast = document.createElement('div');
+        toast.textContent = '壁纸加载中…';
+        toast.style.cssText = 'position:fixed;left:50%;bottom:88px;transform:translateX(-50%);z-index:60;background:rgba(10,10,18,.72);color:#e8e6f5;font:13px/1.4 system-ui,sans-serif;padding:8px 16px;border-radius:999px;border:1px solid rgba(160,110,255,.35);backdrop-filter:blur(6px);transition:opacity .4s ease;pointer-events:none;letter-spacing:.5px;';
+        document.body.appendChild(toast);
+      }, 120);
+      ctlV = vcGet('video', file, function (blob) {
+        if (dead) return;
+        if (blob) {
+          videoUrl = URL.createObjectURL(blob);
+          video.src = videoUrl;
+          var p = video.play();
+          if (p && p.catch) p.catch(function () {});
+        } else { directChain(); }
       });
       document.addEventListener('visibilitychange', onVis);
-      video.play().catch(function () {});
-      // 淡出 canvas，让 video 显示
       canvas.style.opacity = '0';
-      setTimeout(function () { if (video) video.style.opacity = '1'; }, 50);
     }
     function frame(c, w, h, t, dt) { /* video 自播放，canvas 留空 */ }
     function destroy() {
+      dead = true;
       document.removeEventListener('visibilitychange', onVis);
+      if (ctlP) { try { ctlP.abort(); } catch (e) {} ctlP = null; }
+      if (ctlV) { try { ctlV.abort(); } catch (e) {} ctlV = null; }
       hideToast();
+      if (videoUrl) { try { URL.revokeObjectURL(videoUrl); } catch (e) {} videoUrl = null; }
+      if (posterUrl) { try { URL.revokeObjectURL(posterUrl); } catch (e) {} posterUrl = null; }
       if (video) {
-        var v = video;
-        video = null;
+        var v = video; video = null;
         v.style.opacity = '0';
         try { v.pause(); v.removeAttribute('src'); v.load(); } catch (e) {}
         setTimeout(function () { try { v.remove(); } catch (e) {} }, 400);
+      }
+      if (poster) {
+        var pEl = poster; poster = null;
+        pEl.style.opacity = '0';
+        setTimeout(function () { try { pEl.remove(); } catch (e) {} }, 400);
       }
       canvas.style.opacity = '1';
     }
