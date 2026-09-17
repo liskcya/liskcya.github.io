@@ -4877,7 +4877,7 @@ var WP_IMG = {
         smoothBps = smoothBps ? smoothBps * 0.7 + curBps * 0.3 : curBps;
       }
       lastTotal = total; lastTs = now;
-      var speedText = smoothBps > 0 ? (smoothBps >= 1048576 ? (smoothBps / 1048576).toFixed(2) + ' MB/s' : (smoothBps / 1024).toFixed(0) + ' KB/s') : '';
+      var speedText = smoothBps > 0 ? (smoothBps >= 1048576 ? (smoothBps / 1048576).toFixed(2) + 'MB/s' : (smoothBps / 1024).toFixed(0) + 'KB/s') : '';
       var pct = total / (totalMB * 1048576) * 100;
       _pvSetBar(pct);
       var activeNames = activeList.slice(0, 2).map(function (f) {
