@@ -1931,13 +1931,23 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  /* ---------- 3. 个人荣誉渲染 ---------- */
+  /* ---------- 3. 个人荣誉渲染（WebP 优先 + CDN + decoding=async） ---------- */
   const grid = document.getElementById('honorsGrid');
   if (grid) {
+    const _hOn = typeof VID_CDN !== 'undefined';
+    const honorSrc = (p) => _hOn ? VID_CDN + p : p;
+    const honorPic = (p, alt, eager) => {
+      const webp = honorSrc(p.replace(/\.jpg$/, '.webp'));
+      const jpg = honorSrc(p);
+      return '<picture>' +
+        '<source type="image/webp" srcset="' + webp + '">' +
+        '<img src="' + jpg + '" alt="' + alt + '" decoding="async" loading="' + (eager ? 'eager' : 'lazy') + '" onerror="this.replaceWith(Object.assign(document.createElement(\'div\'),{className:\'honor-ph\',innerHTML:\'<b>\'+alt+\'</b>\'}))">' +
+        '</picture>';
+    };
     grid.innerHTML = HONORS.map((h, i) => `
       <article class="honor-card reveal" data-index="${i}" tabindex="0" role="button" aria-label="查看${h.title}证书大图">
         <div class="honor-img-wrap">
-          <img src="${encodeURI(h.img)}" alt="${h.title}荣誉证书" loading="lazy" onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'honor-ph',innerHTML:'<b>${h.title}</b><span>${h.date} · ${h.issuer}</span><em>证书图片待补充</em>'}))" />
+          ${honorPic(h.img, h.title, false)}
           <span class="honor-zoom">🔍</span>
         </div>
         <div class="honor-info">
@@ -1965,15 +1975,19 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const openLb = (i) => {
       const h = HONORS[i];
-      lbImg.src = encodeURI(h.img);
+      const cd = _hOn ? VID_CDN : '';
+      lbImg.src = cd + h.img.replace(/\.jpg$/, '.webp');
       lbImg.alt = h.title;
       lbImg.onerror = () => {
-        lbImg.style.display = 'none';
-        const ph = document.createElement('div');
-        ph.className = 'honor-ph';
-        ph.style.cssText = 'width:min(90vw,600px);aspect-ratio:4/3;max-height:85vh;border-radius:10px;';
-        ph.innerHTML = `<b>${h.title}</b><span>${h.date} · ${h.issuer}</span><em>证书图片待补充</em>`;
-        if (!lb.querySelector('.honor-ph')) lb.insertBefore(ph, lbCap);
+        lbImg.src = cd + h.img; /* webp 加载失败自动 fallback jpg（老浏览器无 WebP 支持） */
+        lbImg.onerror = () => {
+          lbImg.style.display = 'none';
+          const ph = document.createElement('div');
+          ph.className = 'honor-ph';
+          ph.style.cssText = 'width:min(90vw,600px);aspect-ratio:4/3;max-height:85vh;border-radius:10px;';
+          ph.innerHTML = `<b>${h.title}</b><span>${h.date} · ${h.issuer}</span><em>证书图片待补充</em>`;
+          if (!lb.querySelector('.honor-ph')) lb.insertBefore(ph, lbCap);
+        };
       };
       lbImg.style.display = '';
       const oldPh = lb.querySelector('.honor-ph');
@@ -4710,7 +4724,7 @@ var WP_IMG = {
     tokyorain: 'tokyorain', 'cyberpunk-city': 'cyberpunk-city', 'snow-maple': 'snow-maple',
     'star-gate': 'star-gate', 'desk-ui': 'desk-ui'
   };
-  var VID_COMMIT = '3406ed0607765a9fcc4b00d667465de9543e9bc3';
+  var VID_COMMIT = '36db6ebca134b765ca3739a078bd57f5a0e5cdd7';
   var VID_CDN = 'https://cdn.jsdelivr.net/gh/liskcya/liskcya.github.io@' + VID_COMMIT + '/';
 
   var _vdb = null;
@@ -4767,7 +4781,7 @@ var WP_IMG = {
         var u = urls[idx++];
         try {
           ac = new AbortController();
-          tmo = setTimeout(function () { try { ac.abort(); } catch (e) {} }, 60000); /* 单请求 60s 超时，大文件也走 IDB 兜底 */
+          tmo = setTimeout(function () { try { ac.abort(); } catch (e) {} }, 30000); /* 单请求 30s 超时 */
           fetch(u, { signal: ac.signal, mode: 'cors' }).then(function (r) {
             clearTimeout(tmo); tmo = 0;
             if (!r.ok) throw 0;
@@ -4856,8 +4870,7 @@ var WP_IMG = {
           delete _pvCtrls[file];
           var i = _pvBusy.indexOf(file); if (i >= 0) _pvBusy.splice(i, 1);
           if (blob) { _pvDoneN++; _pvMB += (VID_SIZE[file] || 0); }
-          else if (!_pvRetry[file]) { _pvRetry[file] = 1; _pvQ.push(file); }
-          else { _pvDoneN++; }
+          else { _pvDoneN++; } /* 失败直接跳过，不让大文件反复 retry 堵队列 */
           _pvUpdate();
           if (!_pvQ.length && !_pvBusy.length) _pvFinish();
           else setTimeout(_pvTick, 250);
@@ -5155,12 +5168,12 @@ var WP_IMG = {
     /* 场景切换：清掉可能残留的 <video> / poster 元素（切到 Aurora 等非视频场景时也兜底清理） */
     document.querySelectorAll('body > video').forEach(function (v) { try { v.pause(); v.removeAttribute('src'); v.load(); v.remove(); } catch (e) {} });
     document.querySelectorAll('body > div[style*="z-index:-5"]').forEach(function (d) { try { d.remove(); } catch (e) {} });
-    /* 预加载恢复：不依赖 VideoScene.reveal，任何场景切换都应恢复 */
-    try { if (typeof _pvResume === 'function') _pvResume(); } catch (e) {}
     if (scene && scene.destroy) { try { scene.destroy(); } catch (e) {} }
+    var resumeAfterInit = function () { try { if (typeof _pvResume === 'function') _pvResume(); } catch (e) {} };
     if (!withFade) {
       scene = make(name); scene.init(W, H);
       canvas.style.opacity = '1';
+      resumeAfterInit();
       return;
     }
     fadeBusy = true;
@@ -5169,7 +5182,7 @@ var WP_IMG = {
     setTimeout(function () {
       scene = make(name); scene.init(W, H);
       canvas.style.opacity = '1';
-      setTimeout(function () { fadeBusy = false; }, 340);
+      setTimeout(function () { fadeBusy = false; resumeAfterInit(); }, 340);
     }, 280);
   }
 
