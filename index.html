@@ -4880,7 +4880,7 @@ var WP_IMG = {
   }
   function _pvStart() {
     if (_pvOn) return;
-    _pvOn = true; _pvDoneN = 0; _pvMB = 0;
+    _pvOn = true; _pvPaused = false; _pvDoneN = 0; _pvMB = 0; /* 必须清 paused——切过视频后 VideoScene.init 会调 _pvYield 把它置 true */
     preBtn.classList.add('busy'); preBtn.classList.remove('done');
     _vdbOpen(function (db) {
       _vdbKeys(db, 'video', function (have) {
