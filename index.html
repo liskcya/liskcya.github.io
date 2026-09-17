@@ -4758,7 +4758,7 @@ var WP_IMG = {
   }
   /* 取二进制：先查 IndexedDB，未命中按 CDN→本站 回退链下载，成功即存入本地库。cb(blob|null, fromCache) */
   function vcGet(kind, file, cb) {
-    var dead = false, ac = null;
+    var dead = false, ac = null, tmo = 0;
     function net() {
       var urls = _vcCands(kind, file), idx = 0;
       (function next() {
@@ -4767,26 +4767,28 @@ var WP_IMG = {
         var u = urls[idx++];
         try {
           ac = new AbortController();
+          tmo = setTimeout(function () { try { ac.abort(); } catch (e) {} }, 60000); /* 单请求 60s 超时，大文件也走 IDB 兜底 */
           fetch(u, { signal: ac.signal, mode: 'cors' }).then(function (r) {
+            clearTimeout(tmo); tmo = 0;
             if (!r.ok) throw 0;
             return r.blob();
           }).then(function (b) {
             if (dead) return;
             _vdbPut(_vdb, kind, file, b);
             cb(b, false);
-          }).catch(function () { ac = null; setTimeout(next, 0); });
+          }).catch(function () { clearTimeout(tmo); tmo = 0; ac = null; if (!dead) setTimeout(next, 0); });
         } catch (e) { setTimeout(next, 0); }
       })();
     }
     _vdbOpen(function (db) {
-      if (dead) return;
+      if (dead) { cb(null, false); return; }
       _vdbRec(db, kind, file, function (rec) {
-        if (dead) return;
+        if (dead) { cb(null, false); return; }
         if (rec && rec.blob) { cb(rec.blob, true); return; }
         net();
       });
     });
-    return { abort: function () { dead = true; try { if (ac) ac.abort(); } catch (e) {} } };
+    return { abort: function () { dead = true; try { if (ac) ac.abort(); } catch (e) {} clearTimeout(tmo); } };
   }
 
   /* 封面预取：16 张共约 3MB，进站后立即全部入库，切换壁纸时封面秒显 */
@@ -5103,7 +5105,7 @@ var WP_IMG = {
     }
     function frame(c, w, h, t, dt) { /* video 自播放，canvas 留空 */ }
     function destroy() {
-      dead = true;
+      dead = true; started = false;
       document.removeEventListener('visibilitychange', onVis);
       if (ctlP) { try { ctlP.abort(); } catch (e) {} ctlP = null; }
       if (ctlV) { try { ctlV.abort(); } catch (e) {} ctlV = null; }
@@ -5112,16 +5114,11 @@ var WP_IMG = {
       if (posterUrl) { try { URL.revokeObjectURL(posterUrl); } catch (e) {} posterUrl = null; }
       if (video) {
         var v = video; video = null;
-        v.style.opacity = '0';
-        try { v.pause(); v.removeAttribute('src'); v.load(); } catch (e) {}
-        setTimeout(function () { try { v.remove(); } catch (e) {} }, 400);
+        try { v.pause(); v.removeAttribute('src'); v.load(); v.remove(); } catch (e) {}
       }
-      if (poster) {
-        var pEl = poster; poster = null;
-        pEl.style.opacity = '0';
-        setTimeout(function () { try { pEl.remove(); } catch (e) {} }, 400);
-      }
+      if (poster) { try { poster.remove(); } catch (e) {} poster = null; }
       canvas.style.opacity = '1';
+      try { if (typeof _pvResume === 'function') _pvResume(); } catch (e) {}
     }
     return { init: init, frame: frame, destroy: destroy };
   }
@@ -5155,6 +5152,11 @@ var WP_IMG = {
   var fadeBusy = false;
   function applyScene(withFade) {
     var name = activeSceneName();
+    /* 场景切换：清掉可能残留的 <video> / poster 元素（切到 Aurora 等非视频场景时也兜底清理） */
+    document.querySelectorAll('body > video').forEach(function (v) { try { v.pause(); v.removeAttribute('src'); v.load(); v.remove(); } catch (e) {} });
+    document.querySelectorAll('body > div[style*="z-index:-5"]').forEach(function (d) { try { d.remove(); } catch (e) {} });
+    /* 预加载恢复：不依赖 VideoScene.reveal，任何场景切换都应恢复 */
+    try { if (typeof _pvResume === 'function') _pvResume(); } catch (e) {}
     if (scene && scene.destroy) { try { scene.destroy(); } catch (e) {} }
     if (!withFade) {
       scene = make(name); scene.init(W, H);
