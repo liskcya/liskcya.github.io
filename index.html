@@ -4863,25 +4863,29 @@ var WP_IMG = {
   var _pvLoading = {}, _pvUI = null;
   function _pvUIStart() {
     if (_pvUI) return;
+    var lastTotal = 0, lastTs = Date.now(), smoothBps = 0;
     _pvUI = setInterval(function () {
       if (!_pvOn) return;
-      var bytesDone = _pvMB * 1048576;
-      var bytesActive = 0;
+      var bytesDone = _pvMB * 1048576, bytesActive = 0;
       var activeList = Object.keys(_pvLoading);
-      activeList.forEach(function (f) {
-        var info = _pvLoading[f];
-        if (info.loaded) bytesActive += info.loaded;
-      });
+      activeList.forEach(function (f) { var info = _pvLoading[f]; if (info.loaded) bytesActive += info.loaded; });
       var totalMB = 0;
       VID_ORDER.forEach(function (f) { totalMB += (VID_SIZE[f] || 0); });
-      var pct = (bytesDone + bytesActive) / (totalMB * 1048576) * 100;
+      var total = bytesDone + bytesActive, now = Date.now(), dt = (now - lastTs) / 1000;
+      if (dt > 0 && total >= lastTotal) {
+        var curBps = (total - lastTotal) / dt;
+        smoothBps = smoothBps ? smoothBps * 0.7 + curBps * 0.3 : curBps;
+      }
+      lastTotal = total; lastTs = now;
+      var speedText = smoothBps > 0 ? (smoothBps >= 1048576 ? (smoothBps / 1048576).toFixed(2) + ' MB/s' : (smoothBps / 1024).toFixed(0) + ' KB/s') : '';
+      var pct = total / (totalMB * 1048576) * 100;
       _pvSetBar(pct);
       var activeNames = activeList.slice(0, 2).map(function (f) {
         var info = _pvLoading[f];
         var p = info.total ? Math.floor(info.loaded / info.total * 100) + '%' : Math.floor(info.loaded / 1048576) + 'MB';
         return f + ' ' + p;
       }).join(' · ');
-      _pvSetLabel('正在缓存 ' + _pvDoneN + '/16 · ' + Math.round((bytesDone + bytesActive) / 1048576) + 'MB / ' + Math.round(totalMB) + 'MB' + (activeNames ? ' · ' + activeNames : ''));
+      _pvSetLabel('正在缓存 ' + _pvDoneN + '/16 · ' + Math.round(total / 1048576) + 'MB / ' + Math.round(totalMB) + 'MB' + (speedText ? ' · ' + speedText : '') + (activeNames ? ' · ' + activeNames : ''));
     }, 400);
   }
   function _pvUIStop() { if (_pvUI) { clearInterval(_pvUI); _pvUI = null; } }
