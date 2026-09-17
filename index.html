@@ -4776,11 +4776,14 @@ var WP_IMG = {
   }
   /* 取二进制：先查 IndexedDB，未命中按 CDN→本站 回退链下载，成功即存入本地库。cb(blob|null, fromCache) */
   function vcGet(kind, file, cb) {
-    var dead = false, ac = null, tmo = 0;
+    var dead = false, ac = null, tmo = 0, lastEmit = 0;
+    function emit(loaded, total) {
+      if (typeof _pvLoading !== 'undefined') _pvLoading[file] = { loaded: loaded, total: total || 0, kind: kind };
+    }
     function net() {
       var urls = _vcCands(kind, file), idx = 0;
       (function next() {
-        if (dead) return;
+        if (dead) { cb(null, false); return; }
         if (idx >= urls.length) { cb(null, false); return; }
         var u = urls[idx++];
         try {
@@ -4789,12 +4792,37 @@ var WP_IMG = {
           fetch(u, { signal: ac.signal, mode: 'cors' }).then(function (r) {
             clearTimeout(tmo); tmo = 0;
             if (!r.ok) throw 0;
-            return r.blob();
-          }).then(function (b) {
-            if (dead) return;
-            _vdbPut(_vdb, kind, file, b);
-            cb(b, false);
-          }).catch(function () { clearTimeout(tmo); tmo = 0; ac = null; if (!dead) setTimeout(next, 0); });
+            var total = parseInt(r.headers.get('Content-Length') || '0', 10);
+            var reader = r.body.getReader();
+            var chunks = [], loaded = 0;
+            emit(0, total);
+            function pump() {
+              reader.read().then(function (res) {
+                if (dead) { try { reader.cancel(); } catch (e) {} cb(null, false); return; }
+                if (res.done) {
+                  if (dead) { cb(null, false); return; }
+                  var blob = new Blob(chunks);
+                  emit(loaded, total);
+                  if (kind === 'video' && typeof _pvLoading !== 'undefined') { delete _pvLoading[file]; }
+                  _vdbPut(_vdb, kind, file, blob);
+                  cb(blob, false);
+                  return;
+                }
+                loaded += res.value.byteLength;
+                chunks.push(res.value);
+                var now = Date.now();
+                if (now - lastEmit > 250) { emit(loaded, total); lastEmit = now; }
+                pump();
+              }).catch(function () { if (!dead) setTimeout(next, 0); });
+            }
+            pump();
+            return null; /* 防止 Promise 继续接 blob */
+          }).catch(function () {
+            clearTimeout(tmo); tmo = 0; ac = null;
+            if (dead) { cb(null, false); return; }
+            if (typeof _pvLoading !== 'undefined' && _pvLoading[file]) delete _pvLoading[file];
+            setTimeout(next, 0);
+          });
         } catch (e) { setTimeout(next, 0); }
       })();
     }
@@ -4806,7 +4834,7 @@ var WP_IMG = {
         net();
       });
     });
-    return { abort: function () { dead = true; try { if (ac) ac.abort(); } catch (e) {} clearTimeout(tmo); } };
+    return { abort: function () { dead = true; try { if (ac) ac.abort(); } catch (e) {} clearTimeout(tmo); if (typeof _pvLoading !== 'undefined' && _pvLoading[file]) delete _pvLoading[file]; } };
   }
 
   /* 封面预取：16 张共约 3MB，进站后立即全部入库，切换壁纸时封面秒显 */
@@ -4832,6 +4860,31 @@ var WP_IMG = {
   var VID_ORDER = ['cyberpunk', 'sunset', 'snow-maple', 'star-gate', 'fireworks', 'ocean', 'cyberpunk-city', 'desk-ui', 'summer-studio', 'tokyorain', 'seaside', 'blossom', 'irithyll', 'synthwave', 'countryside', 'starry'];
   var VID_SIZE = { cyberpunk: 2.1, sunset: 2.3, 'snow-maple': 2.4, 'star-gate': 3.0, fireworks: 3.1, ocean: 4.6, 'cyberpunk-city': 5.4, 'desk-ui': 5.4, 'summer-studio': 7.7, tokyorain: 7.8, seaside: 8.2, blossom: 13.4, irithyll: 14, synthwave: 14.6, countryside: 24, starry: 38.9 };
   var _pvOn = false, _pvPaused = false, _pvQ = [], _pvBusy = [], _pvCtrls = {}, _pvRetry = {}, _pvDoneN = 0, _pvMB = 0, _pvArmed = false, _pvArmTimer = 0;
+  var _pvLoading = {}, _pvUI = null;
+  function _pvUIStart() {
+    if (_pvUI) return;
+    _pvUI = setInterval(function () {
+      if (!_pvOn) return;
+      var bytesDone = _pvMB * 1048576;
+      var bytesActive = 0;
+      var activeList = Object.keys(_pvLoading);
+      activeList.forEach(function (f) {
+        var info = _pvLoading[f];
+        if (info.loaded) bytesActive += info.loaded;
+      });
+      var totalMB = 0;
+      VID_ORDER.forEach(function (f) { totalMB += (VID_SIZE[f] || 0); });
+      var pct = (bytesDone + bytesActive) / (totalMB * 1048576) * 100;
+      _pvSetBar(pct);
+      var activeNames = activeList.slice(0, 2).map(function (f) {
+        var info = _pvLoading[f];
+        var p = info.total ? Math.floor(info.loaded / info.total * 100) + '%' : Math.floor(info.loaded / 1048576) + 'MB';
+        return f + ' ' + p;
+      }).join(' · ');
+      _pvSetLabel('正在缓存 ' + _pvDoneN + '/16 · ' + Math.round((bytesDone + bytesActive) / 1048576) + 'MB / ' + Math.round(totalMB) + 'MB' + (activeNames ? ' · ' + activeNames : ''));
+    }, 400);
+  }
+  function _pvUIStop() { if (_pvUI) { clearInterval(_pvUI); _pvUI = null; } }
   function _pvSetLabel(text) {
     var bar = preBtn.querySelector('.wp-prefetch-bar');
     preBtn.textContent = text;
@@ -4866,6 +4919,8 @@ var WP_IMG = {
   }
   function _pvFinish() {
     _pvOn = false; _pvPaused = false;
+    _pvUIStop();
+    _pvLoading = {};
     preBtn.classList.remove('busy');
     if (_pvDoneN >= 16) {
       preBtn.classList.add('done');
@@ -4902,6 +4957,7 @@ var WP_IMG = {
     if (_pvOn) return;
     _pvOn = true; _pvPaused = false; _pvDoneN = 0; _pvMB = 0; /* 必须清 paused——切过视频后 VideoScene.init 会调 _pvYield 把它置 true */
     preBtn.classList.add('busy'); preBtn.classList.remove('done');
+    _pvUIStart();
     _vdbOpen(function (db) {
       _vdbKeys(db, 'video', function (have) {
         have.forEach(function (f) { if (VID_ORDER.indexOf(f) >= 0) { _pvDoneN++; _pvMB += (VID_SIZE[f] || 0); } });
