@@ -1484,18 +1484,18 @@ const MANGAS = [
   { name: '水星领航员',         img: 'https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx477-CdKPHW7rGbUP.png' },
 ];
 
-/* ===== 小说收藏数据（封面来自豆瓣图书，统一走 img1 主机避免防盗链） ===== */
+/* ===== 小说收藏数据（封面已本地化：豆瓣原图下载后转 WebP 400px，存 assets/img/novels/，不再依赖图床） ===== */
 const NOVELS = [
-  { name: '嫌疑人X的献身',   img: 'https://img1.doubanio.com/view/subject/l/public/s3254244.jpg' },
-  { name: '白夜行',          img: 'https://img1.doubanio.com/view/subject/l/public/s24514468.jpg' },
-  { name: '恶意',            img: 'https://img1.doubanio.com/view/subject/l/public/s29827014.jpg' },
-  { name: '解忧杂货店',      img: 'https://img1.doubanio.com/view/subject/l/public/s27264181.jpg' },
-  { name: '撒野',            img: 'https://img1.doubanio.com/view/subject/l/public/s29889999.jpg' },
-  { name: '异兽迷城',        img: 'https://img1.doubanio.com/view/subject/l/public/s34824439.jpg' },
-  { name: '三体',            img: 'https://img1.doubanio.com/view/subject/l/public/s2768378.jpg' },
-  { name: '流浪地球',        img: 'https://img1.doubanio.com/view/subject/l/public/s28780375.jpg' },
-  { name: '消失的十三级台阶', img: 'https://img1.doubanio.com/view/subject/l/public/s34070178.jpg' },
-  { name: '十三层空间',      img: 'https://img1.doubanio.com/view/subject/l/public/s29431183.jpg' },
+  { name: '嫌疑人X的献身',   img: 'assets/img/novels/n1.webp' },
+  { name: '白夜行',          img: 'assets/img/novels/n2.webp' },
+  { name: '恶意',            img: 'assets/img/novels/n3.webp' },
+  { name: '解忧杂货店',      img: 'assets/img/novels/n4.webp' },
+  { name: '撒野',            img: 'assets/img/novels/n5.webp' },
+  { name: '异兽迷城',        img: 'assets/img/novels/n6.webp' },
+  { name: '三体',            img: 'assets/img/novels/n7.webp' },
+  { name: '流浪地球',        img: 'assets/img/novels/n8.webp' },
+  { name: '消失的十三级台阶', img: 'assets/img/novels/n9.webp' },
+  { name: '十三层空间',      img: 'assets/img/novels/n10.webp' },
 ];
 
 /* ===== 电影片单数据（真人电影用 TMDB 海报 / 动画电影用 AniList 封面，均为竖版海报） ===== */
@@ -3900,7 +3900,7 @@ document.addEventListener('DOMContentLoaded', () => {
       <div class="bgm-title" id="bgmTitle">—</div>
     </div>
     <div class="bgm-tag" id="bgmTag">—</div>
-    <button class="bgm-list-btn" id="bgmListBtn" title="歌单">☰</button>
+    <button class="bgm-list-btn" id="bgmListBtn" title="歌单"><svg viewBox="0 0 24 24" width="15" height="15" style="display:block;margin:auto"><path d="M4 6h16M4 12h16M4 18h16" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" fill="none"/></svg></button>
     <div class="bgm-prog"><div class="bgm-prog-bar" id="bgmProgBar"></div></div>
   </div>
   <div class="bgm-playlist" id="bgmPlaylist">
